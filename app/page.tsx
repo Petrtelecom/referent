@@ -7,6 +7,7 @@ export default function Home() {
   const [result, setResult] = useState('')
   const [loading, setLoading] = useState(false)
   const [activeButton, setActiveButton] = useState<string | null>(null)
+  const [parsedSuccessfully, setParsedSuccessfully] = useState(false)
 
   const handleParse = async () => {
     if (!url.trim()) {
@@ -37,8 +38,10 @@ export default function Home() {
       // Форматируем JSON для красивого отображения
       const jsonResult = JSON.stringify(data, null, 2)
       setResult(jsonResult)
+      setParsedSuccessfully(true)
     } catch (error) {
       setResult(`Ошибка: ${error instanceof Error ? error.message : 'Неизвестная ошибка'}`)
+      setParsedSuccessfully(false)
     } finally {
       setLoading(false)
       setActiveButton(null)
@@ -86,7 +89,10 @@ export default function Home() {
                 id="article-url"
                 type="url"
                 value={url}
-                onChange={(e) => setUrl(e.target.value)}
+                onChange={(e) => {
+                  setUrl(e.target.value)
+                  setParsedSuccessfully(false)
+                }}
                 placeholder="https://example.com/article"
                 className="flex-1 px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all disabled:bg-gray-100 disabled:cursor-not-allowed"
                 disabled={loading}
@@ -99,6 +105,8 @@ export default function Home() {
                     ? 'bg-indigo-600 text-white shadow-lg scale-105'
                     : loading
                     ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                    : parsedSuccessfully
+                    ? 'bg-green-500 text-white hover:bg-green-600 hover:shadow-md active:scale-95'
                     : 'bg-indigo-500 text-white hover:bg-indigo-600 hover:shadow-md active:scale-95'
                 }`}
               >
