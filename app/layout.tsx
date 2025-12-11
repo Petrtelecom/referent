@@ -1,8 +1,9 @@
 import type { Metadata } from 'next'
+import './globals.css'
 
 export const metadata: Metadata = {
   title: 'Referent',
-  description: 'Я изучаю Next.js',
+  description: 'Референт - переводчик с ИИ-обработкой',
 }
 
 export default function RootLayout({
