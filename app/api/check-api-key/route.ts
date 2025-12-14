@@ -41,7 +41,7 @@ export async function GET(request: NextRequest) {
       let errorMessage = 'Неизвестная ошибка'
       
       try {
-        const errorJson = JSON.error ? JSON.parse(errorData) : null
+        const errorJson = JSON.parse(errorData)
         errorMessage = errorJson?.error?.message || errorData || response.statusText
       } catch {
         errorMessage = errorData || response.statusText
