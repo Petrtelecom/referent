@@ -62,15 +62,35 @@ export async function POST(request: NextRequest) {
       console.error('Ошибка OpenRouter API:', errorData)
       
       let errorMessage = `Ошибка при обращении к API перевода: ${response.status} ${response.statusText}`
+      let userFriendlyMessage = errorMessage
+      
       try {
         const errorJson = JSON.parse(errorData)
-        errorMessage = errorJson.error?.message || errorMessage
+        const apiErrorMessage = errorJson.error?.message || ''
+        errorMessage = apiErrorMessage || errorMessage
+        
+        // Улучшенные сообщения для распространённых ошибок
+        if (apiErrorMessage.includes('User not found') || apiErrorMessage.includes('user not found')) {
+          userFriendlyMessage = 'API ключ невалиден или аккаунт не найден. Проверьте правильность ключа на https://openrouter.ai/keys'
+        } else if (apiErrorMessage.includes('Insufficient credits') || apiErrorMessage.includes('insufficient')) {
+          userFriendlyMessage = 'Недостаточно средств на счёте OpenRouter. Пополните баланс на https://openrouter.ai/credits'
+        } else if (apiErrorMessage.includes('Invalid API key') || apiErrorMessage.includes('invalid')) {
+          userFriendlyMessage = 'Неверный API ключ. Проверьте правильность ключа в .env.local или настройках Vercel'
+        } else if (apiErrorMessage.includes('Rate limit') || apiErrorMessage.includes('rate limit')) {
+          userFriendlyMessage = 'Превышен лимит запросов. Попробуйте позже'
+        } else {
+          userFriendlyMessage = apiErrorMessage || errorMessage
+        }
       } catch {
         // Если не JSON, используем текст как есть
+        userFriendlyMessage = errorData || errorMessage
       }
       
       return NextResponse.json(
-        { error: errorMessage },
+        { 
+          error: userFriendlyMessage,
+          details: errorMessage !== userFriendlyMessage ? errorMessage : undefined
+        },
         { 
           status: response.status,
           headers: {
