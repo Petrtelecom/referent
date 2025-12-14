@@ -8,6 +8,7 @@ export default function Home() {
   const [loading, setLoading] = useState(false)
   const [activeButton, setActiveButton] = useState<string | null>(null)
   const [parsedSuccessfully, setParsedSuccessfully] = useState(false)
+  const [parsedArticle, setParsedArticle] = useState<{ title: string; content: string; date: string } | null>(null)
 
   const handleParse = async () => {
     if (!url.trim()) {
