@@ -35,6 +35,9 @@ export default function Home() {
 
       const data = await response.json()
       
+      // Сохраняем распарсенную статью
+      setParsedArticle(data)
+      
       // Форматируем JSON для красивого отображения
       const jsonResult = JSON.stringify(data, null, 2)
       setResult(jsonResult)
@@ -42,6 +45,40 @@ export default function Home() {
     } catch (error) {
       setResult(`Ошибка: ${error instanceof Error ? error.message : 'Неизвестная ошибка'}`)
       setParsedSuccessfully(false)
+    } finally {
+      setLoading(false)
+      setActiveButton(null)
+    }
+  }
+
+  const handleTranslate = async () => {
+    if (!parsedArticle || !parsedArticle.content) {
+      alert('Сначала необходимо распарсить статью')
+      return
+    }
+
+    setLoading(true)
+    setActiveButton('Перевести')
+    setResult('')
+
+    try {
+      const response = await fetch('/api/translate', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ text: parsedArticle.content }),
+      })
+
+      if (!response.ok) {
+        const error = await response.json()
+        throw new Error(error.error || 'Ошибка при переводе статьи')
+      }
+
+      const data = await response.json()
+      setResult(data.translation || 'Перевод не получен')
+    } catch (error) {
+      setResult(`Ошибка: ${error instanceof Error ? error.message : 'Неизвестная ошибка'}`)
     } finally {
       setLoading(false)
       setActiveButton(null)
@@ -92,6 +129,7 @@ export default function Home() {
                 onChange={(e) => {
                   setUrl(e.target.value)
                   setParsedSuccessfully(false)
+                  setParsedArticle(null)
                 }}
                 placeholder="https://example.com/article"
                 className="flex-1 px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all disabled:bg-gray-100 disabled:cursor-not-allowed"
@@ -125,7 +163,31 @@ export default function Home() {
             </div>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <button
+              onClick={handleTranslate}
+              disabled={loading || !parsedSuccessfully}
+              className={`px-6 py-3 rounded-lg font-medium transition-all ${
+                activeButton === 'Перевести'
+                  ? 'bg-indigo-600 text-white shadow-lg scale-105'
+                  : loading || !parsedSuccessfully
+                  ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                  : 'bg-indigo-500 text-white hover:bg-indigo-600 hover:shadow-md active:scale-95'
+              }`}
+            >
+              {loading && activeButton === 'Перевести' ? (
+                <span className="flex items-center justify-center">
+                  <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                  </svg>
+                  Перевод...
+                </span>
+              ) : (
+                'Перевести'
+              )}
+            </button>
+
             <button
               onClick={() => handleAction('О чем статья?')}
               disabled={loading}
