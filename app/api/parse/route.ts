@@ -2,8 +2,10 @@ import { NextRequest, NextResponse } from 'next/server'
 import { load } from 'cheerio'
 
 export async function POST(request: NextRequest) {
+  let url: string | undefined
   try {
-    const { url } = await request.json()
+    const requestBody = await request.json()
+    url = requestBody.url
 
     if (!url || typeof url !== 'string') {
       return NextResponse.json(
@@ -256,7 +258,7 @@ export async function POST(request: NextRequest) {
     console.error('Ошибка парсинга:', {
       message: error instanceof Error ? error.message : 'Неизвестная ошибка',
       stack: error instanceof Error ? error.stack : undefined,
-      url: url,
+      url: url || 'не определен',
       timestamp: new Date().toISOString()
     })
     
