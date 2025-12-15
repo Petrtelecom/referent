@@ -55,6 +55,9 @@ export async function POST(request: NextRequest) {
     const html = await response.text()
     const $ = load(html)
 
+    // Удаляем все скрипты и стили глобально перед парсингом
+    $('script, style, noscript').remove()
+
     // Извлекаем заголовок
     let title = ''
     // Пробуем разные селекторы для заголовка
@@ -117,26 +120,84 @@ export async function POST(request: NextRequest) {
     for (const selector of contentSelectors) {
       const element = $(selector).first()
       if (element.length) {
-        // Удаляем ненужные элементы (скрипты, стили, реклама)
-        element.find('script, style, nav, aside, .advertisement, .ads, .sidebar').remove()
-        content = element.text().trim()
+        // Удаляем ненужные элементы (скрипты, стили, реклама, код)
+        const clone = element.clone()
+        clone.find('script, style, nav, aside, .advertisement, .ads, .sidebar, code, pre, .code, .highlight').remove()
+        // Удаляем элементы с классами, указывающими на код
+        clone.find('[class*="code"], [class*="syntax"], [class*="highlight"]').remove()
+        content = clone.text().trim()
         if (content && content.length > 100) break // Минимум 100 символов для валидного контента
       }
     }
 
     // Если не нашли через селекторы, берем body без header/footer/nav
     if (!content) {
-      $('header, footer, nav, aside').remove()
-      content = $('body').text().trim()
+      const bodyClone = $('body').clone()
+      bodyClone.find('header, footer, nav, aside, script, style, code, pre').remove()
+      content = bodyClone.text().trim()
     }
 
     // Очищаем контент от лишних пробелов
     content = content.replace(/\s+/g, ' ').trim()
+    
+    // Удаляем явные фрагменты кода, которые могли попасть в текст
+    // (строки, которые выглядят как JavaScript/код)
+    const lines = content.split(/[.!?]\s+/).filter(line => {
+      const trimmedLine = line.trim()
+      if (!trimmedLine || trimmedLine.length < 10) return true // Оставляем короткие строки
+      
+      // Пропускаем строки, которые явно являются кодом
+      const codeIndicators = [
+        /^\w+\.\w+\s*=\s*\w+/,  // window.xxx = yyy
+        /^function\s*\(/,        // function(
+        /^(const|let|var)\s+\w+\s*=/,  // const/let/var xxx =
+        /^if\s*\(/,              // if(
+        /^return\s+/,           // return
+        /^console\./,           // console.
+        /^document\./,          // document.
+        /\.addEventListener\(/, // .addEventListener(
+        /^[{}();=,\[\]]+$/,     // Только технические символы
+      ]
+      
+      return !codeIndicators.some(pattern => pattern.test(trimmedLine))
+    })
+    
+    content = lines.join('. ').trim()
+
+    // Определение языка текста
+    // Простая эвристика: проверяем наличие кириллических символов
+    const detectLanguage = (text: string): 'ru' | 'en' | 'unknown' => {
+      if (!text || text.length < 10) return 'unknown'
+      
+      // Регулярное выражение для кириллических символов
+      const cyrillicPattern = /[А-Яа-яЁё]/
+      const cyrillicMatches = text.match(/[А-Яа-яЁё]/g) || []
+      const totalLetters = text.match(/[А-Яа-яЁёA-Za-z]/g) || []
+      
+      // Если есть кириллические символы и их доля больше 30% от всех букв
+      if (cyrillicMatches.length > 0 && totalLetters.length > 0) {
+        const cyrillicRatio = cyrillicMatches.length / totalLetters.length
+        if (cyrillicRatio > 0.3) {
+          return 'ru'
+        }
+      }
+      
+      // Если нет кириллических символов, но есть латинские - вероятно английский
+      const latinMatches = text.match(/[A-Za-z]/g) || []
+      if (latinMatches.length > 0 && cyrillicMatches.length === 0) {
+        return 'en'
+      }
+      
+      return 'unknown'
+    }
+
+    const language = detectLanguage(content)
 
     return NextResponse.json({
       date: date || 'Не найдена',
       title: title || 'Не найден',
-      content: content || 'Не найден'
+      content: content || 'Не найден',
+      language: language
     })
 
   } catch (error) {
