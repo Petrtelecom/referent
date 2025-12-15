@@ -216,7 +216,10 @@ export default function Home() {
         },
         body: JSON.stringify({
           action: actionType,
-          articleData: articleData,
+          articleData: {
+            ...articleData,
+            url: url // Добавляем URL статьи для использования в промпте
+          },
         }),
       })
 

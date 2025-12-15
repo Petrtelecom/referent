@@ -52,8 +52,25 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const html = await response.text()
-    const $ = load(html)
+    let html: string
+    try {
+      html = await response.text()
+    } catch (error) {
+      console.error('Ошибка при чтении HTML:', error)
+      throw new Error('Не удалось прочитать содержимое страницы')
+    }
+
+    if (!html || html.length === 0) {
+      throw new Error('Страница вернула пустой контент')
+    }
+
+    let $
+    try {
+      $ = load(html)
+    } catch (error) {
+      console.error('Ошибка при парсинге HTML:', error)
+      throw new Error('Не удалось распарсить HTML страницы')
+    }
 
     // Удаляем все скрипты и стили глобально перед парсингом
     $('script, style, noscript').remove()
@@ -114,7 +131,15 @@ export async function POST(request: NextRequest) {
       '.entry-content',
       '.post-content',
       'main article',
-      '[role="article"]'
+      '[role="article"]',
+      // Дополнительные селекторы для различных сайтов
+      '.text',
+      '.article-text',
+      '.main-content',
+      '#content',
+      '#article-content',
+      '.article-body',
+      '.post-body'
     ]
     
     for (const selector of contentSelectors) {
@@ -131,10 +156,32 @@ export async function POST(request: NextRequest) {
     }
 
     // Если не нашли через селекторы, берем body без header/footer/nav
-    if (!content) {
-      const bodyClone = $('body').clone()
-      bodyClone.find('header, footer, nav, aside, script, style, code, pre').remove()
-      content = bodyClone.text().trim()
+    if (!content || content.length < 100) {
+      try {
+        const bodyClone = $('body').clone()
+        bodyClone.find('header, footer, nav, aside, script, style, code, pre').remove()
+        const bodyText = bodyClone.text().trim()
+        if (bodyText && bodyText.length > content.length) {
+          content = bodyText
+        }
+      } catch (error) {
+        console.error('Ошибка при извлечении контента из body:', error)
+        // Продолжаем с тем, что есть
+      }
+    }
+
+    // Проверяем, что контент был извлечен
+    if (!content || content.trim().length < 50) {
+      // Пробуем альтернативный метод - извлечение из всех параграфов
+      try {
+        const paragraphs = $('p').map((_, el) => $(el).text().trim()).get()
+        const paragraphText = paragraphs.filter(p => p.length > 20).join(' ')
+        if (paragraphText && paragraphText.length > content.length) {
+          content = paragraphText
+        }
+      } catch (error) {
+        console.error('Ошибка при извлечении контента из параграфов:', error)
+      }
     }
 
     // Очищаем контент от лишних пробелов
@@ -142,27 +189,32 @@ export async function POST(request: NextRequest) {
     
     // Удаляем явные фрагменты кода, которые могли попасть в текст
     // (строки, которые выглядят как JavaScript/код)
-    const lines = content.split(/[.!?]\s+/).filter(line => {
-      const trimmedLine = line.trim()
-      if (!trimmedLine || trimmedLine.length < 10) return true // Оставляем короткие строки
+    try {
+      const lines = content.split(/[.!?]\s+/).filter(line => {
+        const trimmedLine = line.trim()
+        if (!trimmedLine || trimmedLine.length < 10) return true // Оставляем короткие строки
+        
+        // Пропускаем строки, которые явно являются кодом
+        const codeIndicators = [
+          /^\w+\.\w+\s*=\s*\w+/,  // window.xxx = yyy
+          /^function\s*\(/,        // function(
+          /^(const|let|var)\s+\w+\s*=/,  // const/let/var xxx =
+          /^if\s*\(/,              // if(
+          /^return\s+/,           // return
+          /^console\./,           // console.
+          /^document\./,          // document.
+          /\.addEventListener\(/, // .addEventListener(
+          /^[{}();=,\[\]]+$/,     // Только технические символы
+        ]
+        
+        return !codeIndicators.some(pattern => pattern.test(trimmedLine))
+      })
       
-      // Пропускаем строки, которые явно являются кодом
-      const codeIndicators = [
-        /^\w+\.\w+\s*=\s*\w+/,  // window.xxx = yyy
-        /^function\s*\(/,        // function(
-        /^(const|let|var)\s+\w+\s*=/,  // const/let/var xxx =
-        /^if\s*\(/,              // if(
-        /^return\s+/,           // return
-        /^console\./,           // console.
-        /^document\./,          // document.
-        /\.addEventListener\(/, // .addEventListener(
-        /^[{}();=,\[\]]+$/,     // Только технические символы
-      ]
-      
-      return !codeIndicators.some(pattern => pattern.test(trimmedLine))
-    })
-    
-    content = lines.join('. ').trim()
+      content = lines.join('. ').trim()
+    } catch (error) {
+      console.error('Ошибка при фильтрации кода:', error)
+      // Продолжаем с исходным контентом, если фильтрация не удалась
+    }
 
     // Определение языка текста
     // Простая эвристика: проверяем наличие кириллических символов
@@ -201,9 +253,31 @@ export async function POST(request: NextRequest) {
     })
 
   } catch (error) {
-    console.error('Ошибка парсинга:', error)
+    console.error('Ошибка парсинга:', {
+      message: error instanceof Error ? error.message : 'Неизвестная ошибка',
+      stack: error instanceof Error ? error.stack : undefined,
+      url: url,
+      timestamp: new Date().toISOString()
+    })
+    
+    const errorMessage = error instanceof Error ? error.message : 'Неизвестная ошибка'
+    
+    // Более информативные сообщения об ошибках
+    let userFriendlyMessage = `Ошибка при парсинге: ${errorMessage}`
+    
+    if (errorMessage.includes('timeout') || errorMessage.includes('Timeout')) {
+      userFriendlyMessage = 'Превышено время ожидания ответа от сервера. Попробуйте позже или проверьте доступность сайта.'
+    } else if (errorMessage.includes('fetch failed') || errorMessage.includes('network')) {
+      userFriendlyMessage = 'Ошибка сети при загрузке страницы. Проверьте подключение к интернету и доступность сайта.'
+    } else if (errorMessage.includes('JSON') || errorMessage.includes('parse')) {
+      userFriendlyMessage = 'Ошибка при обработке данных страницы. Возможно, сайт вернул неожиданный формат данных.'
+    }
+    
     return NextResponse.json(
-      { error: `Ошибка при парсинге: ${error instanceof Error ? error.message : 'Неизвестная ошибка'}` },
+      { 
+        error: userFriendlyMessage,
+        details: errorMessage !== userFriendlyMessage ? errorMessage : undefined
+      },
       { status: 500 }
     )
   }
