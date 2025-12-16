@@ -262,6 +262,72 @@ export default function Home() {
     }
   }
 
+  const handleSaveResult = async () => {
+    if (!result) return
+
+    try {
+      // Генерируем имя файла из названия статьи или используем "Referent" с датой и временем
+      let fileName: string
+      if (parsedArticle?.title && parsedArticle.title.trim()) {
+        let titleToUse = parsedArticle.title.trim()
+        
+        // Переводим название на русский, если статья не на русском языке
+        if (parsedArticle.language !== 'ru') {
+          try {
+            const translateResponse = await fetch('/api/translate', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({ text: titleToUse }),
+            })
+
+            if (translateResponse.ok) {
+              const translateData = await translateResponse.json()
+              if (translateData.translation) {
+                titleToUse = translateData.translation.trim()
+              }
+            }
+          } catch (error) {
+            // Если перевод не удался, используем оригинальное название
+            console.error('Ошибка при переводе названия:', error)
+          }
+        }
+        
+        // Очищаем название от недопустимых символов для имени файла
+        fileName = titleToUse
+          .replace(/[<>:"/\\|?*]/g, '') // Удаляем недопустимые символы
+          .replace(/\s+/g, ' ') // Заменяем множественные пробелы на один
+          .trim()
+          .substring(0, 100) // Ограничиваем длину до 100 символов
+      } else {
+        // Если названия нет, используем "Referent" с датой и временем
+        const now = new Date()
+        const dateStr = now.toISOString().slice(0, 19).replace(/:/g, '-')
+        fileName = `Referent-${dateStr}`
+      }
+
+      // Создаем Blob с текстом в формате TXT
+      const blob = new Blob([result], { type: 'text/plain;charset=utf-8' })
+      
+      // Создаем временную ссылку для скачивания
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = `${fileName}.txt`
+      
+      // Добавляем ссылку в DOM, кликаем и удаляем
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+      
+      // Освобождаем память
+      URL.revokeObjectURL(url)
+    } catch (error) {
+      alert('Не удалось сохранить файл')
+    }
+  }
+
   return (
     <main className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 py-12 px-4 sm:px-6 lg:px-8">
       <div className="max-w-4xl mx-auto">
@@ -290,16 +356,20 @@ export default function Home() {
                 setResult('')
                 setCurrentActionType(null)
               }}
-              placeholder="https://example.com/article"
+              placeholder="Введите URL статьи, например: https://example.com/article"
               className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all disabled:bg-gray-100 disabled:cursor-not-allowed"
               disabled={loading}
             />
+            <p className="mt-2 text-xs text-gray-500">
+              Укажите ссылку на англоязычную статью
+            </p>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             <button
               onClick={handleTranslate}
               disabled={loading}
+              title="Перевести статью на русский язык"
               className={`px-6 py-3 rounded-lg font-medium transition-all ${
                 activeButton === 'Перевести' || activeButton === 'Парсинг...'
                   ? 'bg-indigo-600 text-white shadow-lg scale-105'
@@ -331,7 +401,7 @@ export default function Home() {
                   ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
                   : 'bg-indigo-500 text-white hover:bg-indigo-600 hover:shadow-md active:scale-95'
               }`}
-              title={!parsedSuccessfully ? 'Сначала распарсите статью' : ''}
+              title="Получить краткое описание содержания статьи"
             >
               {loading && activeButton === 'О чем статья?' ? (
                 <span className="flex items-center justify-center">
@@ -356,7 +426,7 @@ export default function Home() {
                   ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
                   : 'bg-indigo-500 text-white hover:bg-indigo-600 hover:shadow-md active:scale-95'
               }`}
-              title={!parsedSuccessfully ? 'Сначала распарсите статью' : ''}
+              title="Получить структурированные тезисы статьи"
             >
               {loading && activeButton === 'Тезисы' ? (
                 <span className="flex items-center justify-center">
@@ -381,7 +451,7 @@ export default function Home() {
                   ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
                   : 'bg-indigo-500 text-white hover:bg-indigo-600 hover:shadow-md active:scale-95'
               }`}
-              title={!parsedSuccessfully ? 'Сначала распарсите статью' : ''}
+              title="Создать пост для публикации в Telegram"
             >
               {loading && activeButton === 'Пост для Telegram' ? (
                 <span className="flex items-center justify-center">
@@ -398,23 +468,61 @@ export default function Home() {
           </div>
         </div>
 
+        {(loading || activeButton) && (
+          <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-4 mb-6">
+            <div className="flex items-center gap-3">
+              {loading && (
+                <svg className="animate-spin h-5 w-5 text-indigo-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+              )}
+              <p className="text-indigo-700 text-sm font-medium">
+                {activeButton === 'Парсинг...' 
+                  ? 'Загружаю статью...' 
+                  : activeButton === 'Перевести' 
+                  ? 'Перевожу статью...' 
+                  : activeButton === 'О чем статья?'
+                  ? 'Анализирую статью...'
+                  : activeButton === 'Тезисы'
+                  ? 'Формирую тезисы...'
+                  : activeButton === 'Пост для Telegram'
+                  ? 'Создаю пост для Telegram...'
+                  : 'Обрабатываю...'}
+              </p>
+            </div>
+          </div>
+        )}
+
         <div className="bg-white rounded-lg shadow-xl p-6 sm:p-8">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-2xl font-semibold text-gray-900">
               Результат
             </h2>
             {result && !loading && (
-              <button
-                id="copy-button"
-                onClick={handleCopyResult}
-                className="px-4 py-2 bg-indigo-500 text-white rounded-lg hover:bg-indigo-600 transition-colors text-sm font-medium flex items-center gap-2"
-                title="Копировать результат"
-              >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                </svg>
-                Копировать
-              </button>
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={handleSaveResult}
+                  className="px-4 py-2 bg-indigo-500 text-white rounded-lg hover:bg-indigo-600 transition-colors text-sm font-medium flex items-center gap-2"
+                  title="Сохранить в файл"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                  </svg>
+                  Сохранить
+                </button>
+                <button
+                  id="copy-button"
+                  onClick={handleCopyResult}
+                  className="px-4 py-2 bg-indigo-500 text-white rounded-lg hover:bg-indigo-600 transition-colors text-sm font-medium flex items-center gap-2"
+                  title="Копировать результат"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                  </svg>
+                  Копировать
+                </button>
+              </div>
             )}
           </div>
           <div className="bg-gray-50 rounded-lg p-4 border border-gray-200 min-h-[200px]">
