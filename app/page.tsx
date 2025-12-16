@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { Alert, AlertDescription } from '@/app/components/ui/alert'
 import { 
   AppError, 
@@ -21,6 +21,7 @@ export default function Home() {
   const [parsedArticle, setParsedArticle] = useState<{ title: string; content: string; date: string; language?: string } | null>(null)
   const [currentActionType, setCurrentActionType] = useState<string | null>(null)
   const [error, setError] = useState<AppError | null>(null)
+  const resultRef = useRef<HTMLDivElement>(null)
 
   // Проверка существования и доступности статьи по URL
   const checkArticleExists = async (articleUrl: string): Promise<boolean> => {
@@ -373,6 +374,27 @@ export default function Home() {
     }
   }
 
+  // Функция очистки всех состояний
+  const handleClear = () => {
+    setUrl('')
+    setResult('')
+    setError(null)
+    setParsedSuccessfully(false)
+    setParsedArticle(null)
+    setCurrentActionType(null)
+    setActiveButton(null)
+    setLoading(false)
+  }
+
+  // Автоматическая прокрутка к результатам после успешной генерации
+  useEffect(() => {
+    if (result && !loading && resultRef.current) {
+      setTimeout(() => {
+        resultRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      }, 100)
+    }
+  }, [result, loading])
+
   const handleSaveResult = async () => {
     if (!result) return
 
@@ -456,22 +478,35 @@ export default function Home() {
             <label htmlFor="article-url" className="block text-sm font-medium text-gray-700 mb-2">
               URL англоязычной статьи
             </label>
-            <input
-              id="article-url"
-              type="url"
-              value={url}
-              onChange={(e) => {
-                setUrl(e.target.value)
-                setParsedSuccessfully(false)
-                setParsedArticle(null)
-                setResult('')
-                setCurrentActionType(null)
-                setError(null)
-              }}
-              placeholder="Введите URL статьи, например: https://example.com/article"
-              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all disabled:bg-gray-100 disabled:cursor-not-allowed"
-              disabled={loading}
-            />
+            <div className="flex gap-2">
+              <input
+                id="article-url"
+                type="url"
+                value={url}
+                onChange={(e) => {
+                  setUrl(e.target.value)
+                  setParsedSuccessfully(false)
+                  setParsedArticle(null)
+                  setResult('')
+                  setCurrentActionType(null)
+                  setError(null)
+                }}
+                placeholder="Введите URL статьи, например: https://example.com/article"
+                className="flex-1 px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all disabled:bg-gray-100 disabled:cursor-not-allowed"
+                disabled={loading}
+              />
+              <button
+                onClick={handleClear}
+                disabled={loading}
+                className="px-4 py-3 bg-gray-500 text-white rounded-lg hover:bg-gray-600 transition-colors text-sm font-medium flex items-center gap-2 disabled:bg-gray-300 disabled:cursor-not-allowed"
+                title="Очистить все поля и результаты"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+                Очистить
+              </button>
+            </div>
             <p className="mt-2 text-xs text-gray-500">
               Укажите ссылку на англоязычную статью
             </p>
@@ -614,7 +649,7 @@ export default function Home() {
           </div>
         )}
 
-        <div className="bg-white rounded-lg shadow-xl p-6 sm:p-8">
+        <div ref={resultRef} className="bg-white rounded-lg shadow-xl p-6 sm:p-8">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-2xl font-semibold text-gray-900">
               Результат
