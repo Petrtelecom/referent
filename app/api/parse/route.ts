@@ -102,6 +102,7 @@ export async function POST(request: NextRequest) {
     // Извлекаем заголовок
     let title = ''
     // Пробуем разные селекторы для заголовка
+    // Добавляем специфичные селекторы для популярных сайтов
     const titleSelectors = [
       'h1',
       'article h1',
@@ -109,6 +110,11 @@ export async function POST(request: NextRequest) {
       '.article-title',
       '.entry-title',
       '[property="og:title"]',
+      'meta[property="og:title"]',
+      // Специфичные для venturebeat.com
+      '.article-header h1',
+      '.article-title h1',
+      'h1.article-title',
       'title'
     ]
     
@@ -163,7 +169,15 @@ export async function POST(request: NextRequest) {
       '#content',
       '#article-content',
       '.article-body',
-      '.post-body'
+      '.post-body',
+      // Специфичные для venturebeat.com и подобных сайтов
+      '.article-body-content',
+      '.article-content-body',
+      '.article-main-content',
+      'article .content',
+      'article .text',
+      '.article p',
+      'article p'
     ]
     
     for (const selector of contentSelectors) {
@@ -171,9 +185,11 @@ export async function POST(request: NextRequest) {
       if (element.length) {
         // Удаляем ненужные элементы (скрипты, стили, реклама, код)
         const clone = element.clone()
-        clone.find('script, style, nav, aside, .advertisement, .ads, .sidebar, code, pre, .code, .highlight').remove()
-        // Удаляем элементы с классами, указывающими на код
-        clone.find('[class*="code"], [class*="syntax"], [class*="highlight"]').remove()
+        clone.find('script, style, nav, aside, .advertisement, .ads, .sidebar, code, pre, .code, .highlight, .newsletter, .social-share, .author, .tags, .related, .comments, footer, header').remove()
+        // Удаляем элементы с классами, указывающими на код, рекламу, навигацию
+        clone.find('[class*="code"], [class*="syntax"], [class*="highlight"], [class*="ad"], [class*="advertisement"], [class*="sidebar"], [class*="nav"], [class*="menu"]').remove()
+        // Удаляем элементы с data-атрибутами, указывающими на рекламу
+        clone.find('[data-ad], [data-ad-unit], [id*="ad"], [id*="advertisement"]').remove()
         content = clone.text().trim()
         if (content && content.length > 100) break // Минимум 100 символов для валидного контента
       }
@@ -198,8 +214,31 @@ export async function POST(request: NextRequest) {
     if (!content || content.trim().length < 50) {
       // Пробуем альтернативный метод - извлечение из всех параграфов
       try {
-        const paragraphs = $('p').map((_, el) => $(el).text().trim()).get()
-        const paragraphText = paragraphs.filter(p => p.length > 20).join(' ')
+        // Исключаем параграфы из навигации, рекламы и т.д.
+        const paragraphs = $('p').filter((_, el) => {
+          const $el = $(el)
+          const parent = $el.parent()
+          // Пропускаем параграфы в навигации, рекламе, сайдбаре
+          return !parent.is('nav, aside, .advertisement, .ads, .sidebar, .newsletter, .social-share, header, footer') &&
+                 !parent.closest('nav, aside, .advertisement, .ads, .sidebar, .newsletter, .social-share, header, footer').length &&
+                 !$el.closest('nav, aside, .advertisement, .ads, .sidebar, .newsletter, .social-share, header, footer').length
+        }).map((_, el) => $(el).text().trim()).get()
+        
+        const paragraphText = paragraphs
+          .filter(p => p.length > 20) // Минимум 20 символов
+          .filter(p => {
+            // Фильтруем параграфы, которые выглядят как навигация или реклама
+            const lowerP = p.toLowerCase()
+            return !lowerP.includes('subscribe') && 
+                   !lowerP.includes('newsletter') &&
+                   !lowerP.includes('follow us') &&
+                   !lowerP.includes('share this') &&
+                   !lowerP.includes('cookie') &&
+                   !lowerP.includes('privacy policy') &&
+                   !lowerP.includes('terms of service')
+          })
+          .join(' ')
+        
         if (paragraphText && paragraphText.length > content.length) {
           content = paragraphText
         }
@@ -210,6 +249,37 @@ export async function POST(request: NextRequest) {
 
     // Очищаем контент от лишних пробелов
     content = content.replace(/\s+/g, ' ').trim()
+    
+    // Финальная проверка контента перед возвратом
+    if (!content || content.trim().length < 50) {
+      console.error('Не удалось извлечь достаточный контент:', {
+        url,
+        htmlLength: html.length,
+        titleFound: !!title,
+        contentLength: content.length,
+        timestamp: new Date().toISOString()
+      })
+      
+      // Последняя попытка - извлечение всех текстовых узлов из article
+      try {
+        const articleElement = $('article').first()
+        if (articleElement.length) {
+          const articleClone = articleElement.clone()
+          articleClone.find('script, style, nav, aside, .advertisement, .ads, .sidebar, code, pre, .code, .highlight, .newsletter, .social-share, .author, .tags, .related, .comments, footer, header').remove()
+          articleClone.find('[class*="ad"], [class*="advertisement"], [class*="sidebar"], [class*="nav"], [class*="menu"], [id*="ad"], [id*="advertisement"]').remove()
+          const articleText = articleClone.text().trim().replace(/\s+/g, ' ')
+          if (articleText && articleText.length > 50) {
+            content = articleText
+          }
+        }
+      } catch (error) {
+        console.error('Ошибка при последней попытке извлечения контента:', error)
+      }
+      
+      if (!content || content.trim().length < 50) {
+        throw new Error('Не удалось извлечь содержимое статьи. Возможно, страница использует JavaScript для загрузки контента или имеет нестандартную структуру. Попробуйте другую статью или проверьте, доступна ли страница в браузере.')
+      }
+    }
     
     // Удаляем явные фрагменты кода, которые могли попасть в текст
     // (строки, которые выглядят как JavaScript/код)

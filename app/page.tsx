@@ -104,21 +104,19 @@ export default function Home() {
     setResult('')
 
     // Проверяем существование статьи перед выполнением действий
+    // Пропускаем проверку, если она не критична - позволим парсеру попробовать
     setActiveButton('Проверка...')
     try {
       const articleExists = await checkArticleExists(url.trim())
-      if (!articleExists) {
-        setError(handleError(new Error('Не удалось загрузить статью по этой ссылке.'), 'parse_error'))
-        setLoading(false)
-        setActiveButton(null)
-        return
+      // Если проверка вернула false, но это не критично - продолжаем попытку парсинга
+      // Парсер сам вернет более детальную ошибку
+      if (articleExists === false) {
+        console.warn('Проверка доступности вернула false, но продолжаем попытку парсинга')
+        // Не останавливаем процесс, позволим парсеру попробовать
       }
     } catch (error) {
-      const appError = error instanceof Error && 'type' in error ? error as AppError : handleNetworkError(error)
-      setError(appError)
-      setLoading(false)
-      setActiveButton(null)
-      return
+      // Ошибка проверки не критична - продолжаем попытку парсинга
+      console.warn('Ошибка проверки доступности, продолжаем попытку парсинга:', error)
     }
 
     // Проверяем, распарсена ли статья, и получаем актуальные данные
@@ -244,21 +242,19 @@ export default function Home() {
     setResult('')
 
     // Проверяем существование статьи перед выполнением действий
+    // Пропускаем проверку, если она не критична - позволим парсеру попробовать
     setActiveButton('Проверка...')
     try {
       const articleExists = await checkArticleExists(url.trim())
-      if (!articleExists) {
-        setError(handleError(new Error('Не удалось загрузить статью по этой ссылке.'), 'parse_error'))
-        setLoading(false)
-        setActiveButton(null)
-        return
+      // Если проверка вернула false, но это не критично - продолжаем попытку парсинга
+      // Парсер сам вернет более детальную ошибку
+      if (articleExists === false) {
+        console.warn('Проверка доступности вернула false, но продолжаем попытку парсинга')
+        // Не останавливаем процесс, позволим парсеру попробовать
       }
     } catch (error) {
-      const appError = error instanceof Error && 'type' in error ? error as AppError : handleNetworkError(error)
-      setError(appError)
-      setLoading(false)
-      setActiveButton(null)
-      return
+      // Ошибка проверки не критична - продолжаем попытку парсинга
+      console.warn('Ошибка проверки доступности, продолжаем попытку парсинга:', error)
     }
 
     // Проверяем, распарсена ли статья, и получаем актуальные данные
