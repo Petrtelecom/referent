@@ -22,6 +22,29 @@ export default function Home() {
   const [currentActionType, setCurrentActionType] = useState<string | null>(null)
   const [error, setError] = useState<AppError | null>(null)
 
+  // Проверка существования и доступности статьи по URL
+  const checkArticleExists = async (articleUrl: string): Promise<boolean> => {
+    try {
+      const response = await fetch('/api/check-article', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ url: articleUrl }),
+      })
+
+      if (!response.ok) {
+        return false
+      }
+
+      const data = await response.json()
+      return data.exists === true
+    } catch (error) {
+      console.error('Ошибка проверки статьи:', error)
+      return false
+    }
+  }
+
   // Вспомогательная функция для парсинга статьи
   const parseArticle = async (): Promise<{ title: string; content: string; date: string; language?: string } | null> => {
     if (!url.trim()) {
@@ -76,6 +99,24 @@ export default function Home() {
 
     setLoading(true)
     setResult('')
+
+    // Проверяем существование статьи перед выполнением действий
+    setActiveButton('Проверка...')
+    try {
+      const articleExists = await checkArticleExists(url.trim())
+      if (!articleExists) {
+        setError(handleError(new Error('Не удалось загрузить статью по этой ссылке.'), 'parse_error'))
+        setLoading(false)
+        setActiveButton(null)
+        return
+      }
+    } catch (error) {
+      const appError = error instanceof Error && 'type' in error ? error as AppError : handleNetworkError(error)
+      setError(appError)
+      setLoading(false)
+      setActiveButton(null)
+      return
+    }
 
     // Проверяем, распарсена ли статья, и получаем актуальные данные
     let articleData = parsedArticle
@@ -196,14 +237,33 @@ export default function Home() {
       return
     }
 
+    setLoading(true)
+    setResult('')
+
+    // Проверяем существование статьи перед выполнением действий
+    setActiveButton('Проверка...')
+    try {
+      const articleExists = await checkArticleExists(url.trim())
+      if (!articleExists) {
+        setError(handleError(new Error('Не удалось загрузить статью по этой ссылке.'), 'parse_error'))
+        setLoading(false)
+        setActiveButton(null)
+        return
+      }
+    } catch (error) {
+      const appError = error instanceof Error && 'type' in error ? error as AppError : handleNetworkError(error)
+      setError(appError)
+      setLoading(false)
+      setActiveButton(null)
+      return
+    }
+
     // Проверяем, распарсена ли статья, и получаем актуальные данные
     let articleData = parsedArticle
 
     if (!articleData || !articleData.content) {
       // Если статья не распарсена, сначала парсим её
-      setLoading(true)
       setActiveButton('Парсинг...')
-      setResult('')
 
       try {
         articleData = await parseArticle()
@@ -536,7 +596,9 @@ export default function Home() {
                 </svg>
               )}
               <p className="text-indigo-700 text-sm font-medium">
-                {activeButton === 'Парсинг...' 
+                {activeButton === 'Проверка...'
+                  ? 'Проверяю доступность статьи...'
+                  : activeButton === 'Парсинг...' 
                   ? 'Загружаю статью...' 
                   : activeButton === 'Перевести' 
                   ? 'Перевожу статью...' 
