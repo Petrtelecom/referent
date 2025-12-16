@@ -1,6 +1,16 @@
 'use client'
 
 import { useState } from 'react'
+import { Alert, AlertDescription } from '@/app/components/ui/alert'
+import { 
+  AppError, 
+  handleParseError, 
+  handleTranslateError, 
+  handleAIProcessError, 
+  handleNetworkError,
+  handleValidationError,
+  handleError
+} from '@/app/utils/error-handler'
 
 export default function Home() {
   const [url, setUrl] = useState('')
@@ -10,35 +20,49 @@ export default function Home() {
   const [parsedSuccessfully, setParsedSuccessfully] = useState(false)
   const [parsedArticle, setParsedArticle] = useState<{ title: string; content: string; date: string; language?: string } | null>(null)
   const [currentActionType, setCurrentActionType] = useState<string | null>(null)
+  const [error, setError] = useState<AppError | null>(null)
 
   // Вспомогательная функция для парсинга статьи
   const parseArticle = async (): Promise<{ title: string; content: string; date: string; language?: string } | null> => {
     if (!url.trim()) {
-      throw new Error('Пожалуйста, введите URL статьи')
+      throw handleValidationError('Пожалуйста, введите URL статьи')
     }
 
-    const response = await fetch('/api/parse', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ url }),
-    })
+    let response: Response
+    try {
+      response = await fetch('/api/parse', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ url }),
+      })
+    } catch (fetchError) {
+      throw handleNetworkError(fetchError)
+    }
 
     if (!response.ok) {
-      const error = await response.json()
-      throw new Error(error.error || 'Ошибка при парсинге статьи')
+      let errorData
+      try {
+        errorData = await response.json()
+      } catch {
+        errorData = {}
+      }
+      throw handleParseError(response, errorData)
     }
 
     const data = await response.json()
     setParsedArticle(data)
     setParsedSuccessfully(true)
+    setError(null) // Очищаем ошибки при успешном парсинге
     return data
   }
 
   const handleTranslate = async () => {
+    setError(null)
+    
     if (!url.trim()) {
-      alert('Пожалуйста, введите URL статьи')
+      setError(handleValidationError('Пожалуйста, введите URL статьи'))
       return
     }
 
@@ -46,7 +70,7 @@ export default function Home() {
     try {
       new URL(url.trim())
     } catch {
-      alert('Пожалуйста, введите корректный URL')
+      setError(handleValidationError('Пожалуйста, введите корректный URL'))
       return
     }
 
@@ -63,16 +87,16 @@ export default function Home() {
       try {
         articleData = await parseArticle()
         if (!articleData) {
-          throw new Error('Не удалось распарсить статью')
+          throw handleError(new Error('Не удалось распарсить статью'), 'parse_error')
         }
         
         // Валидация распарсенных данных
         if (!articleData.content || articleData.content.trim().length < 50) {
-          throw new Error('Не удалось получить содержимое статьи. Возможно, это PDF файл или страница без текстового контента. Попробуйте использовать HTML-версию статьи.')
+          throw handleError(new Error('Не удалось получить содержимое статьи. Возможно, это PDF файл или страница без текстового контента. Попробуйте использовать HTML-версию статьи.'), 'parse_error')
         }
       } catch (error) {
-        const errorMessage = error instanceof Error ? error.message : 'Неизвестная ошибка'
-        setResult(`Ошибка: ${errorMessage}`)
+        const appError = error instanceof Error && 'type' in error ? error as AppError : handleError(error, 'parse_error')
+        setError(appError)
         setLoading(false)
         setActiveButton(null)
         return
@@ -81,7 +105,7 @@ export default function Home() {
 
     // Валидация данных статьи перед переводом
     if (!articleData.content || articleData.content.trim().length < 50) {
-      setResult('Ошибка: Содержимое статьи слишком короткое или отсутствует. Возможно, это PDF файл. Попробуйте использовать HTML-версию статьи.')
+      setError(handleError(new Error('Содержимое статьи слишком короткое или отсутствует. Возможно, это PDF файл. Попробуйте использовать HTML-версию статьи.'), 'validation_error'))
       setLoading(false)
       setActiveButton(null)
       return
@@ -92,6 +116,7 @@ export default function Home() {
       setResult(articleData.content)
       setLoading(false)
       setActiveButton(null)
+      setError(null)
       return
     }
 
@@ -99,17 +124,27 @@ export default function Home() {
     setActiveButton('Перевести')
 
     try {
-      const response = await fetch('/api/translate', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ text: articleData.content }),
-      })
+      let response: Response
+      try {
+        response = await fetch('/api/translate', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ text: articleData.content }),
+        })
+      } catch (fetchError) {
+        throw handleNetworkError(fetchError)
+      }
 
       if (!response.ok) {
-        const error = await response.json()
-        throw new Error(error.error || 'Ошибка при переводе статьи')
+        let errorData
+        try {
+          errorData = await response.json()
+        } catch {
+          errorData = {}
+        }
+        throw handleTranslateError(response, errorData)
       }
 
       const data = await response.json()
@@ -121,8 +156,10 @@ export default function Home() {
       }
       
       setResult(translation)
+      setError(null)
     } catch (error) {
-      setResult(`Ошибка: ${error instanceof Error ? error.message : 'Неизвестная ошибка'}`)
+      const appError = error instanceof Error && 'type' in error ? error as AppError : handleError(error, 'translate_error')
+      setError(appError)
     } finally {
       setLoading(false)
       setActiveButton(null)
@@ -144,8 +181,10 @@ export default function Home() {
   }
 
   const handleAction = async (action: string) => {
+    setError(null)
+    
     if (!url.trim()) {
-      alert('Пожалуйста, введите URL статьи')
+      setError(handleValidationError('Пожалуйста, введите URL статьи'))
       return
     }
 
@@ -153,7 +192,7 @@ export default function Home() {
     try {
       new URL(url.trim())
     } catch {
-      alert('Пожалуйста, введите корректный URL')
+      setError(handleValidationError('Пожалуйста, введите корректный URL'))
       return
     }
 
@@ -169,16 +208,16 @@ export default function Home() {
       try {
         articleData = await parseArticle()
         if (!articleData) {
-          throw new Error('Не удалось распарсить статью')
+          throw handleError(new Error('Не удалось распарсить статью'), 'parse_error')
         }
         
         // Валидация распарсенных данных
         if (!articleData.content || articleData.content.trim().length < 50) {
-          throw new Error('Не удалось получить содержимое статьи. Статья может быть пустой или недоступной.')
+          throw handleError(new Error('Не удалось получить содержимое статьи. Статья может быть пустой или недоступной.'), 'parse_error')
         }
       } catch (error) {
-        const errorMessage = error instanceof Error ? error.message : 'Неизвестная ошибка'
-        setResult(`Ошибка: ${errorMessage}`)
+        const appError = error instanceof Error && 'type' in error ? error as AppError : handleError(error, 'parse_error')
+        setError(appError)
         setLoading(false)
         setActiveButton(null)
         return
@@ -187,7 +226,7 @@ export default function Home() {
 
     // Валидация данных статьи перед отправкой
     if (!articleData.content || articleData.content.trim().length < 50) {
-      setResult('Ошибка: Содержимое статьи слишком короткое или отсутствует')
+      setError(handleError(new Error('Содержимое статьи слишком короткое или отсутствует'), 'validation_error'))
       setLoading(false)
       setActiveButton(null)
       return
@@ -196,7 +235,7 @@ export default function Home() {
     // Получаем тип действия для API
     const actionType = getActionType(action)
     if (!actionType) {
-      setResult(`Ошибка: Неизвестный тип действия "${action}"`)
+      setError(handleError(new Error(`Неизвестный тип действия "${action}"`), 'validation_error'))
       setLoading(false)
       setActiveButton(null)
       return
@@ -209,30 +248,42 @@ export default function Home() {
     setResult('')
 
     try {
-      const response = await fetch('/api/ai-process', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          action: actionType,
-          articleData: {
-            ...articleData,
-            url: url // Добавляем URL статьи для использования в промпте
+      let response: Response
+      try {
+        response = await fetch('/api/ai-process', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
           },
-        }),
-      })
+          body: JSON.stringify({
+            action: actionType,
+            articleData: {
+              ...articleData,
+              url: url // Добавляем URL статьи для использования в промпте
+            },
+          }),
+        })
+      } catch (fetchError) {
+        throw handleNetworkError(fetchError)
+      }
 
       if (!response.ok) {
-        const error = await response.json()
-        throw new Error(error.error || error.details || 'Ошибка при AI-обработке')
+        let errorData
+        try {
+          errorData = await response.json()
+        } catch {
+          errorData = {}
+        }
+        throw handleAIProcessError(response, errorData)
       }
 
       const data = await response.json()
       setResult(data.result || 'Результат не получен')
+      setError(null)
       // Сохраняем тип действия для форматирования результата
     } catch (error) {
-      setResult(`Ошибка: ${error instanceof Error ? error.message : 'Неизвестная ошибка'}`)
+      const appError = error instanceof Error && 'type' in error ? error as AppError : handleError(error, 'ai_process_error')
+      setError(appError)
       setCurrentActionType(null) // Сбрасываем только при ошибке
     } finally {
       setLoading(false)
@@ -355,6 +406,7 @@ export default function Home() {
                 setParsedArticle(null)
                 setResult('')
                 setCurrentActionType(null)
+                setError(null)
               }}
               placeholder="Введите URL статьи, например: https://example.com/article"
               className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all disabled:bg-gray-100 disabled:cursor-not-allowed"
@@ -467,6 +519,12 @@ export default function Home() {
             </button>
           </div>
         </div>
+
+        {error && (
+          <Alert variant="destructive" className="mb-6">
+            <AlertDescription>{error.message}</AlertDescription>
+          </Alert>
+        )}
 
         {(loading || activeButton) && (
           <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-4 mb-6">
