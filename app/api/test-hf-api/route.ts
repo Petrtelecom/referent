@@ -67,7 +67,7 @@ export async function GET(request: NextRequest) {
         const altResponse = await fetch(altUrl, {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${huggingFaceApiKey}`,
+            'Authorization': `Bearer ${imageApiKey}`,
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({
