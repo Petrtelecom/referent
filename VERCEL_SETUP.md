@@ -1,8 +1,9 @@
 # Настройка переменных окружения на Vercel
 
 Для работы приложения на Vercel необходимо добавить переменные окружения:
-- `TRANSLATION_API_KEY` - API ключ для переводов и AI-обработки
-- `IMAGE_API_KEY` - API ключ для генерации изображений (опционально)
+- `TRANSLATION_API_KEY` - API ключ для переводов и AI-обработки (ProxyAPI через OpenRouter)
+- `GEMINI_API_KEY` - API ключ для генерации изображений через Google Gemini (ProxyAPI) (опционально)
+- `IMAGE_API_KEY` - Альтернативное имя для `GEMINI_API_KEY` (для обратной совместимости)
 
 ## Инструкция:
 
@@ -16,9 +17,13 @@
    - Нажмите кнопку **Add New**
    - Добавьте переменные:
      - **Name:** `TRANSLATION_API_KEY`
-     - **Value:** ваш API ключ от OpenRouter (например: `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`)
+     - **Value:** ваш API ключ от ProxyAPI (для переводов и AI-обработки через OpenRouter)
      - **Environments:** выберите все окружения (Production, Preview, Development) или только Production
-   - Повторите для `IMAGE_API_KEY` (если используется генерация изображений)
+   - Добавьте `GEMINI_API_KEY`:
+     - **Name:** `GEMINI_API_KEY`
+     - **Value:** ваш API ключ от ProxyAPI (для генерации изображений через Google Gemini)
+     - **Environments:** выберите все окружения или только Production
+   - Примечание: `IMAGE_API_KEY` можно использовать как альтернативное имя для `GEMINI_API_KEY` (для обратной совместимости)
 
 3. **Пересоберите проект:**
    - После добавления переменных перейдите в раздел **Deployments**
@@ -30,8 +35,8 @@
 ```powershell
 vercel env add TRANSLATION_API_KEY production
 # Введите значение ключа при запросе
-vercel env add IMAGE_API_KEY production
-# Введите значение ключа при запросе (если используется)
+vercel env add GEMINI_API_KEY production
+# Введите значение ключа при запросе (для генерации изображений через Gemini)
 ```
 
 После этого пересоберите проект через интерфейс или командой:

@@ -8,6 +8,9 @@ importers:
 
   .:
     dependencies:
+      '@google/generative-ai':
+        specifier: ^0.24.1
+        version: 0.24.1
       '@huggingface/inference':
         specifier: ^4.13.5
         version: 4.13.5
@@ -54,6 +57,10 @@ packages:
   '@alloc/quick-lru@5.2.0':
     resolution: {integrity: sha512-UrcABB+4bUrFABwbluTIBErXwvbsU/V7TZWfmbgJfbkwiBuziS9gxdODUyuiecfdGQ85jglMW6juS3+z5TsKLw==}
     engines: {node: '>=10'}
+
+  '@google/generative-ai@0.24.1':
+    resolution: {integrity: sha512-MqO+MLfM6kjxcKoy0p1wRzG3b4ZZXtPI+z2IE26UogS2Cm/XHO+7gGRBh6gcJsOiIVoH93UwKvW4HdgiOZCy9Q==}
+    engines: {node: '>=18.0.0'}
 
   '@huggingface/inference@4.13.5':
     resolution: {integrity: sha512-jeRQVwoV2Xx5stHR4wyZPPvhOOm6Hi9B2hsHWWuFJBEoxlFJMbRAsQbTvQrusw2vNBfNHIqb2i9EpelNLOqhvg==}
@@ -644,6 +651,8 @@ packages:
 snapshots:
 
   '@alloc/quick-lru@5.2.0': {}
+
+  '@google/generative-ai@0.24.1': {}
 
   '@huggingface/inference@4.13.5':
     dependencies:
