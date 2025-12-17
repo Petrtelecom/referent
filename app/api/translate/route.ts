@@ -46,13 +46,13 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    const apiKey = process.env.OPENROUTER_API_KEY
+    const apiKey = process.env.TRANSLATION_API_KEY
     if (!apiKey) {
-      console.error('OPENROUTER_API_KEY не найден в переменных окружения')
+      console.error('TRANSLATION_API_KEY не найден в переменных окружения')
       return NextResponse.json(
         { 
-          error: 'OPENROUTER_API_KEY не настроен',
-          details: 'Убедитесь, что переменная OPENROUTER_API_KEY задана в .env.local (локально) или в настройках проекта на Vercel (для продакшена). После добавления переменной перезапустите сервер.'
+          error: 'TRANSLATION_API_KEY не настроен',
+          details: 'Убедитесь, что переменная TRANSLATION_API_KEY задана в .env.local (локально) или в настройках проекта на Vercel (для продакшена). После добавления переменной перезапустите сервер.'
         },
         { status: 500 }
       )

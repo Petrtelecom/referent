@@ -60,42 +60,42 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Проверка API ключа OpenRouter
-    const openRouterApiKey = process.env.OPENROUTER_API_KEY
-    if (!openRouterApiKey) {
-      console.error('OPENROUTER_API_KEY не найден в переменных окружения')
+    // Проверка API ключа для генерации промпта
+    const translationApiKey = process.env.TRANSLATION_API_KEY
+    if (!translationApiKey) {
+      console.error('TRANSLATION_API_KEY не найден в переменных окружения')
       return NextResponse.json(
         { 
-          error: 'OPENROUTER_API_KEY не настроен',
-          details: 'Убедитесь, что переменная OPENROUTER_API_KEY задана в .env.local'
+          error: 'TRANSLATION_API_KEY не настроен',
+          details: 'Убедитесь, что переменная TRANSLATION_API_KEY задана в .env.local'
         },
         { status: 500 }
       )
     }
 
     // Проверка API ключа Hugging Face
-    const huggingFaceApiKey = process.env.HUGGING_FACE_API_KEY
-    if (!huggingFaceApiKey) {
-      console.error('HUGGING_FACE_API_KEY не найден в переменных окружения')
+    const imageApiKey = process.env.IMAGE_API_KEY
+    if (!imageApiKey) {
+      console.error('IMAGE_API_KEY не найден в переменных окружения')
       return NextResponse.json(
         { 
-          error: 'HUGGING_FACE_API_KEY не настроен',
-          details: 'Убедитесь, что переменная HUGGING_FACE_API_KEY задана в .env.local. Получить ключ можно на https://huggingface.co/settings/tokens'
+          error: 'IMAGE_API_KEY не настроен',
+          details: 'Убедитесь, что переменная IMAGE_API_KEY задана в .env.local. Получить ключ можно на https://huggingface.co/settings/tokens'
         },
         { status: 500 }
       )
     }
 
     // Проверка конфигурации генерации изображений
-    const imageProviderUrl = process.env.IMAGE_GENERATION_PROVIDER_URL || 'https://router.huggingface.co/hf-inference/models/'
-    const imageModel = process.env.IMAGE_GENERATION_MODEL || 'stabilityai/stable-diffusion-xl-base-1.0'
+    const imageProviderUrl = process.env.IMAGE_PROVIDER_URL || 'https://router.huggingface.co/hf-inference/models/'
+    const imageModel = process.env.IMAGE_MODEL || 'stabilityai/stable-diffusion-xl-base-1.0'
     
     if (!imageModel) {
-      console.error('IMAGE_GENERATION_MODEL не найден в переменных окружения')
+      console.error('IMAGE_MODEL не найден в переменных окружения')
       return NextResponse.json(
         { 
-          error: 'IMAGE_GENERATION_MODEL не настроен',
-          details: 'Убедитесь, что переменная IMAGE_GENERATION_MODEL задана в .env.local'
+          error: 'IMAGE_MODEL не настроен',
+          details: 'Убедитесь, что переменная IMAGE_MODEL задана в .env.local'
         },
         { status: 500 }
       )
@@ -106,7 +106,7 @@ export async function POST(request: NextRequest) {
     const translationModel = process.env.TRANSLATION_MODEL || 'deepseek/deepseek-chat'
     
     // Логируем начало попытки генерации (без ключа)
-    console.log('Начало генерации изображения. API ключ Hugging Face:', huggingFaceApiKey ? 'найден' : 'не найден')
+    console.log('Начало генерации изображения. API ключ:', imageApiKey ? 'найден' : 'не найден')
 
     // Шаг 1: Создание промпта через OpenRouter
     const articleText = `Заголовок: ${title}\n\nДата: ${date || 'Не указана'}\n\nСодержание:\n${contentToProcess}`
@@ -135,7 +135,7 @@ export async function POST(request: NextRequest) {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json; charset=utf-8',
-        'Authorization': `Bearer ${openRouterApiKey}`,
+        'Authorization': `Bearer ${translationApiKey}`,
         'HTTP-Referer': process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000',
         'X-Title': 'Referent - Image Prompt Generator'
       },
@@ -196,7 +196,7 @@ export async function POST(request: NextRequest) {
       const response = await fetch(imageApiUrl, {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${huggingFaceApiKey}`,
+          'Authorization': `Bearer ${imageApiKey}`,
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
@@ -213,7 +213,7 @@ export async function POST(request: NextRequest) {
         let errorMessage = `Ошибка при генерации изображения: ${response.status} ${response.statusText}`
         
         if (response.status === 401 || response.status === 403) {
-          errorMessage = `Ошибка авторизации (${response.status}). Проверьте правильность API ключа Hugging Face.`
+          errorMessage = `Ошибка авторизации (${response.status}). Проверьте правильность API ключа.`
         } else {
           try {
             const errorJson = JSON.parse(errorText)
@@ -284,7 +284,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         { 
           error: 'Не удалось сгенерировать изображение',
-          details: 'Попробуйте позже или проверьте настройки API ключа Hugging Face. Возможно, требуется настроить Inference Providers в настройках Hugging Face.'
+          details: 'Попробуйте позже или проверьте настройки API ключа. Возможно, требуется настроить Inference Providers в настройках Hugging Face.'
         },
         { status: 503 }
       )

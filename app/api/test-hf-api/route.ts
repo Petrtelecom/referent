@@ -2,14 +2,14 @@ import { NextRequest, NextResponse } from 'next/server'
 
 export async function GET(request: NextRequest) {
   try {
-    const huggingFaceApiKey = process.env.HUGGING_FACE_API_KEY
+    const imageApiKey = process.env.IMAGE_API_KEY
     
-    if (!huggingFaceApiKey) {
+    if (!imageApiKey) {
       return NextResponse.json(
         { 
           success: false,
-          error: 'HUGGING_FACE_API_KEY не найден в переменных окружения',
-          message: 'Добавьте HUGGING_FACE_API_KEY в .env.local'
+          error: 'IMAGE_API_KEY не найден в переменных окружения',
+          message: 'Добавьте IMAGE_API_KEY в .env.local'
         },
         { status: 200 }
       )
@@ -20,13 +20,13 @@ export async function GET(request: NextRequest) {
     // Используем новый endpoint router.huggingface.co
     const testUrl = `https://router.huggingface.co/hf-inference/models/${testModel}`
     
-    console.log('Тестирование Hugging Face API с ключом:', huggingFaceApiKey.substring(0, 10) + '...')
+    console.log('Тестирование Hugging Face API с ключом:', imageApiKey.substring(0, 10) + '...')
     
     // Делаем тестовый запрос с простым промптом
     const testResponse = await fetch(testUrl, {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${huggingFaceApiKey}`,
+        'Authorization': `Bearer ${imageApiKey}`,
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({

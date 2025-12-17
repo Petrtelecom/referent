@@ -2,14 +2,14 @@ import { NextRequest, NextResponse } from 'next/server'
 
 export async function GET(request: NextRequest) {
   try {
-    const apiKey = process.env.OPENROUTER_API_KEY
+    const apiKey = process.env.TRANSLATION_API_KEY
     
     if (!apiKey) {
       return NextResponse.json(
         { 
           valid: false,
-          error: 'OPENROUTER_API_KEY не найден в переменных окружения',
-          message: 'Убедитесь, что переменная OPENROUTER_API_KEY задана в .env.local'
+          error: 'TRANSLATION_API_KEY не найден в переменных окружения',
+          message: 'Убедитесь, что переменная TRANSLATION_API_KEY задана в .env.local'
         },
         { status: 200 }
       )
