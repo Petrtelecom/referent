@@ -85,6 +85,25 @@ export async function POST(request: NextRequest) {
         { status: 500 }
       )
     }
+
+    // Проверка конфигурации генерации изображений
+    const imageProviderUrl = process.env.IMAGE_GENERATION_PROVIDER_URL || 'https://router.huggingface.co/hf-inference/models/'
+    const imageModel = process.env.IMAGE_GENERATION_MODEL || 'stabilityai/stable-diffusion-xl-base-1.0'
+    
+    if (!imageModel) {
+      console.error('IMAGE_GENERATION_MODEL не найден в переменных окружения')
+      return NextResponse.json(
+        { 
+          error: 'IMAGE_GENERATION_MODEL не настроен',
+          details: 'Убедитесь, что переменная IMAGE_GENERATION_MODEL задана в .env.local'
+        },
+        { status: 500 }
+      )
+    }
+    
+    // Получаем конфигурацию для генерации промпта (используем те же переменные, что и для переводов)
+    const translationProviderUrl = process.env.TRANSLATION_PROVIDER_URL || 'https://openrouter.ai/api/v1/chat/completions'
+    const translationModel = process.env.TRANSLATION_MODEL || 'deepseek/deepseek-chat'
     
     // Логируем начало попытки генерации (без ключа)
     console.log('Начало генерации изображения. API ключ Hugging Face:', huggingFaceApiKey ? 'найден' : 'не найден')
@@ -97,7 +116,7 @@ export async function POST(request: NextRequest) {
     const promptGenerationPrompt = `Based on the following article, create a detailed visual prompt for image generation. The prompt should be in English, descriptive, and capture the main themes and visual elements of the article. Return only the prompt text, no explanations:\n\n${articleText}`
 
     const openRouterRequestBody = {
-      model: 'deepseek/deepseek-chat',
+      model: translationModel,
       messages: [
         {
           role: 'system',
@@ -112,7 +131,7 @@ export async function POST(request: NextRequest) {
       max_tokens: 300
     }
 
-    const openRouterResponse = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+    const openRouterResponse = await fetch(translationProviderUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json; charset=utf-8',
@@ -164,99 +183,108 @@ export async function POST(request: NextRequest) {
     const imagePrompt = openRouterData.choices[0].message.content.trim()
 
     // Шаг 2: Генерация изображения через Hugging Face
-    // Используем прямой запрос к router API с правильным форматом
-    // Пробуем разные модели в порядке приоритета
-    const huggingFaceModels = [
-      'runwayml/stable-diffusion-v1-5',
-      'stabilityai/stable-diffusion-2-1',
-      'stabilityai/stable-diffusion-xl-base-1.0'
-    ]
+    // Используем модель из переменных окружения
+    console.log(`Использование модели: ${imageModel}`)
+    console.log(`Промпт для генерации (первые 100 символов): ${imagePrompt.substring(0, 100)}...`)
+    
+    // Формируем URL для запроса к модели
+    const imageApiUrl = `${imageProviderUrl}${imageModel}`
     
     let generatedImage: Blob | null = null
-    let lastError: string | null = null
     
-    // Пробуем каждую модель
-    for (const model of huggingFaceModels) {
-      try {
-        console.log(`Попытка использовать модель: ${model}`)
-        console.log(`Промпт для генерации (первые 100 символов): ${imagePrompt.substring(0, 100)}...`)
-        
-        // Используем правильный endpoint для Hugging Face Inference API
-        // Формат: https://router.huggingface.co/hf-inference/models/{model}
-        const response = await fetch(`https://router.huggingface.co/hf-inference/models/${model}`, {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${huggingFaceApiKey}`,
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
-            inputs: imagePrompt
-          })
+    try {
+      const response = await fetch(imageApiUrl, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${huggingFaceApiKey}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          inputs: imagePrompt
         })
+      })
+      
+      console.log(`Ответ от ${imageModel}: статус ${response.status}, ok: ${response.ok}`)
+      
+      if (!response.ok) {
+        const errorText = await response.text().catch(() => 'Не удалось прочитать ответ')
+        console.log(`Ошибка от ${imageModel} (${response.status}): ${errorText.substring(0, 300)}`)
         
-        console.log(`Ответ от ${model}: статус ${response.status}, ok: ${response.ok}`)
+        let errorMessage = `Ошибка при генерации изображения: ${response.status} ${response.statusText}`
         
-        if (!response.ok) {
-          const errorText = await response.text().catch(() => 'Не удалось прочитать ответ')
-          console.log(`Ошибка от ${model} (${response.status}): ${errorText.substring(0, 300)}`)
-          
-          // Если это ошибка авторизации, прерываем цикл
-          if (response.status === 401 || response.status === 403) {
-            lastError = `Ошибка авторизации (${response.status}). Проверьте правильность API ключа Hugging Face.`
-            break
-          }
-          
-          lastError = `Модель ${model}: ${response.status} ${errorText.substring(0, 200)}`
-          continue
-        }
-        
-        // Получаем ответ - может быть JSON с данными изображения или blob
-        const contentType = response.headers.get('content-type') || ''
-        
-        if (contentType.includes('application/json')) {
-          // Если ответ JSON, возможно изображение в base64
-          const jsonData = await response.json()
-          if (jsonData.data && jsonData.data[0] && jsonData.data[0].b64_json) {
-            // Изображение в base64 формате
-            const base64Image = jsonData.data[0].b64_json
-            const dataUrl = `data:image/png;base64,${base64Image}`
-            // Создаем blob из base64 для единообразия
-            const binaryString = Buffer.from(base64Image, 'base64').toString('binary')
-            const bytes = new Uint8Array(binaryString.length)
-            for (let i = 0; i < binaryString.length; i++) {
-              bytes[i] = binaryString.charCodeAt(i)
-            }
-            generatedImage = new Blob([bytes], { type: 'image/png' })
-          } else if (jsonData.url) {
-            // Если есть URL изображения, загружаем его
-            const imageResponse = await fetch(jsonData.url)
-            generatedImage = await imageResponse.blob()
-          } else {
-            throw new Error('Неожиданный формат ответа от API')
-          }
+        if (response.status === 401 || response.status === 403) {
+          errorMessage = `Ошибка авторизации (${response.status}). Проверьте правильность API ключа Hugging Face.`
         } else {
-          // Прямой blob ответ
-          generatedImage = await response.blob()
+          try {
+            const errorJson = JSON.parse(errorText)
+            if (errorJson.error) {
+              errorMessage = errorJson.error
+            }
+          } catch {
+            errorMessage = errorText.substring(0, 200) || errorMessage
+          }
         }
         
-        console.log(`Успешно использована модель: ${model}`)
-        break
-        
-      } catch (error) {
-        const errorMessage = error instanceof Error ? error.message : 'Неизвестная ошибка'
-        console.error(`Ошибка при использовании модели ${model}:`, errorMessage)
-        lastError = `Модель ${model}: ${errorMessage}`
-        continue
+        return NextResponse.json(
+          { 
+            error: 'Не удалось сгенерировать изображение',
+            details: errorMessage
+          },
+          { status: response.status }
+        )
       }
+      
+      // Получаем ответ - может быть JSON с данными изображения или blob
+      const contentType = response.headers.get('content-type') || ''
+      
+      if (contentType.includes('application/json')) {
+        // Если ответ JSON, возможно изображение в base64
+        const jsonData = await response.json()
+        if (jsonData.data && jsonData.data[0] && jsonData.data[0].b64_json) {
+          // Изображение в base64 формате
+          const base64Image = jsonData.data[0].b64_json
+          const dataUrl = `data:image/png;base64,${base64Image}`
+          // Создаем blob из base64 для единообразия
+          const binaryString = Buffer.from(base64Image, 'base64').toString('binary')
+          const bytes = new Uint8Array(binaryString.length)
+          for (let i = 0; i < binaryString.length; i++) {
+            bytes[i] = binaryString.charCodeAt(i)
+          }
+          generatedImage = new Blob([bytes], { type: 'image/png' })
+        } else if (jsonData.url) {
+          // Если есть URL изображения, загружаем его
+          const imageResponse = await fetch(jsonData.url)
+          generatedImage = await imageResponse.blob()
+        } else {
+          throw new Error('Неожиданный формат ответа от API')
+        }
+      } else {
+        // Прямой blob ответ
+        generatedImage = await response.blob()
+      }
+      
+      console.log(`Успешно использована модель: ${imageModel}`)
+      
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Неизвестная ошибка'
+      console.error(`Ошибка при использовании модели ${imageModel}:`, errorMessage)
+      
+      return NextResponse.json(
+        { 
+          error: 'Ошибка при генерации изображения',
+          details: errorMessage
+        },
+        { status: 500 }
+      )
     }
     
     // Если не удалось сгенерировать изображение
     if (!generatedImage) {
-      console.error('Все модели Hugging Face недоступны. Последняя ошибка:', lastError)
+      console.error('Не удалось получить изображение от модели')
       return NextResponse.json(
         { 
-          error: 'Не удалось подключиться к сервису генерации изображений. Все модели недоступны.',
-          details: lastError || 'Попробуйте позже или проверьте настройки API ключа Hugging Face. Возможно, требуется настроить Inference Providers в настройках Hugging Face.'
+          error: 'Не удалось сгенерировать изображение',
+          details: 'Попробуйте позже или проверьте настройки API ключа Hugging Face. Возможно, требуется настроить Inference Providers в настройках Hugging Face.'
         },
         { status: 503 }
       )

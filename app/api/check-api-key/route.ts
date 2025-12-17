@@ -15,8 +15,12 @@ export async function GET(request: NextRequest) {
       )
     }
 
+    // Получаем конфигурацию из переменных окружения
+    const translationProviderUrl = process.env.TRANSLATION_PROVIDER_URL || 'https://openrouter.ai/api/v1/chat/completions'
+    const translationModel = process.env.TRANSLATION_MODEL || 'deepseek/deepseek-chat'
+
     // Делаем тестовый запрос к OpenRouter API для проверки ключа
-    const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+    const response = await fetch(translationProviderUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -25,7 +29,7 @@ export async function GET(request: NextRequest) {
         'X-Title': 'Referent - Проверка API ключа'
       },
       body: JSON.stringify({
-        model: 'deepseek/deepseek-chat',
+        model: translationModel,
         messages: [
           {
             role: 'user',
@@ -58,10 +62,12 @@ export async function GET(request: NextRequest) {
 
     const data = await response.json()
 
+    const translationModel = process.env.TRANSLATION_MODEL || 'deepseek/deepseek-chat'
+    
     return NextResponse.json({
       valid: true,
       message: 'API ключ валиден и работает',
-      model: data.model || 'deepseek/deepseek-chat',
+      model: data.model || translationModel,
       usage: data.usage || null
     })
 
@@ -76,6 +82,8 @@ export async function GET(request: NextRequest) {
     )
   }
 }
+
+
 
 
 
