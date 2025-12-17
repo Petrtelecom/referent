@@ -22,6 +22,7 @@ export default function Home() {
   const [currentActionType, setCurrentActionType] = useState<string | null>(null)
   const [error, setError] = useState<AppError | null>(null)
   const [showShareMenu, setShowShareMenu] = useState(false)
+  const [imageResult, setImageResult] = useState<{ image: string; prompt: string } | null>(null)
   const resultRef = useRef<HTMLDivElement>(null)
   const shareMenuRef = useRef<HTMLDivElement>(null)
 
@@ -209,7 +210,7 @@ export default function Home() {
   }
 
   // Маппинг кнопок на типы действий для API
-  const getActionType = (buttonText: string): 'summary' | 'theses' | 'telegram-post' | null => {
+  const getActionType = (buttonText: string): 'summary' | 'theses' | 'telegram-post' | 'illustration' | null => {
     switch (buttonText) {
       case 'О чем статья?':
         return 'summary'
@@ -217,6 +218,8 @@ export default function Home() {
         return 'theses'
       case 'Пост для Telegram':
         return 'telegram-post'
+      case 'Иллюстрация':
+        return 'illustration'
       default:
         return null
     }
@@ -372,6 +375,126 @@ export default function Home() {
     }
   }
 
+  // Обработчик для генерации иллюстрации
+  const handleGenerateImage = async () => {
+    setError(null)
+    
+    if (!url.trim()) {
+      setError(handleValidationError('Пожалуйста, введите URL статьи'))
+      return
+    }
+
+    // Валидация URL
+    try {
+      new URL(url.trim())
+    } catch {
+      setError(handleValidationError('Пожалуйста, введите корректный URL'))
+      return
+    }
+
+    setLoading(true)
+    setImageResult(null)
+    setResult('')
+
+    // Проверяем существование статьи
+    setActiveButton('Проверка...')
+    try {
+      const articleExists = await checkArticleExists(url.trim())
+      if (articleExists === false) {
+        console.warn('Проверка доступности вернула false, но продолжаем попытку парсинга')
+      }
+    } catch (error) {
+      console.warn('Ошибка проверки доступности, продолжаем попытку парсинга:', error)
+    }
+
+    // Проверяем, распарсена ли статья
+    let articleData = parsedArticle
+
+    if (!articleData || !articleData.content) {
+      setActiveButton('Парсинг...')
+      
+      try {
+        articleData = await parseArticle()
+        if (!articleData) {
+          throw handleError(new Error('Не удалось распарсить статью'), 'parse_error')
+        }
+        
+        if (!articleData.content || articleData.content.trim().length < 50) {
+          throw handleError(new Error('Не удалось получить содержимое статьи. Статья может быть пустой или недоступной.'), 'parse_error')
+        }
+      } catch (error) {
+        const appError = error instanceof Error && 'type' in error ? error as AppError : handleError(error, 'parse_error')
+        setError(appError)
+        setLoading(false)
+        setActiveButton(null)
+        return
+      }
+    }
+
+    // Валидация данных статьи
+    if (!articleData.content || articleData.content.trim().length < 50) {
+      setError(handleError(new Error('Содержимое статьи слишком короткое или отсутствует'), 'validation_error'))
+      setLoading(false)
+      setActiveButton(null)
+      return
+    }
+
+    // Выполняем генерацию изображения
+    setLoading(true)
+    setActiveButton('Иллюстрация')
+    setCurrentActionType('illustration')
+    setImageResult(null)
+    setResult('')
+
+    try {
+      let response: Response
+      try {
+        response = await fetch('/api/generate-image', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            articleData: {
+              ...articleData,
+              url: url
+            },
+          }),
+        })
+      } catch (fetchError) {
+        throw handleNetworkError(fetchError)
+      }
+
+      if (!response.ok) {
+        let errorData
+        try {
+          errorData = await response.json()
+        } catch {
+          errorData = {}
+        }
+        throw handleAIProcessError(response, errorData)
+      }
+
+      const data = await response.json()
+      if (data.image && data.prompt) {
+        setImageResult({
+          image: data.image,
+          prompt: data.prompt
+        })
+        setError(null)
+      } else {
+        throw handleError(new Error('Неверный формат ответа от API'), 'ai_process_error')
+      }
+    } catch (error) {
+      const appError = error instanceof Error && 'type' in error ? error as AppError : handleError(error, 'ai_process_error')
+      setError(appError)
+      setCurrentActionType(null)
+    } finally {
+      setLoading(false)
+      setActiveButton(null)
+    }
+  }
+
   // Функция очистки всех состояний
   const handleClear = () => {
     setUrl('')
@@ -382,6 +505,7 @@ export default function Home() {
     setCurrentActionType(null)
     setActiveButton(null)
     setLoading(false)
+    setImageResult(null)
   }
 
   // Функция для отправки в мессенджеры
@@ -446,15 +570,15 @@ export default function Home() {
 
   // Автоматическая прокрутка к результатам после успешной генерации
   useEffect(() => {
-    if (result && !loading && resultRef.current) {
+    if ((result || imageResult) && !loading && resultRef.current) {
       setTimeout(() => {
         resultRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
       }, 100)
     }
-  }, [result, loading])
+  }, [result, imageResult, loading])
 
   const handleSaveResult = async () => {
-    if (!result) return
+    if (!result && !imageResult) return
 
     try {
       // Генерируем имя файла из названия статьи или используем "Referent" с датой и временем
@@ -498,22 +622,36 @@ export default function Home() {
         fileName = `Referent-${dateStr}`
       }
 
-      // Создаем Blob с текстом в формате TXT
-      const blob = new Blob([result], { type: 'text/plain;charset=utf-8' })
-      
-      // Создаем временную ссылку для скачивания
-      const url = URL.createObjectURL(blob)
-      const link = document.createElement('a')
-      link.href = url
-      link.download = `${fileName}.txt`
-      
-      // Добавляем ссылку в DOM, кликаем и удаляем
-      document.body.appendChild(link)
-      link.click()
-      document.body.removeChild(link)
-      
-      // Освобождаем память
-      URL.revokeObjectURL(url)
+      if (imageResult) {
+        // Сохранение изображения
+        const response = await fetch(imageResult.image)
+        const blob = await response.blob()
+        const url = URL.createObjectURL(blob)
+        const link = document.createElement('a')
+        link.href = url
+        link.download = `${fileName}.png`
+        document.body.appendChild(link)
+        link.click()
+        document.body.removeChild(link)
+        URL.revokeObjectURL(url)
+      } else if (result) {
+        // Создаем Blob с текстом в формате TXT
+        const blob = new Blob([result], { type: 'text/plain;charset=utf-8' })
+        
+        // Создаем временную ссылку для скачивания
+        const url = URL.createObjectURL(blob)
+        const link = document.createElement('a')
+        link.href = url
+        link.download = `${fileName}.txt`
+        
+        // Добавляем ссылку в DOM, кликаем и удаляем
+        document.body.appendChild(link)
+        link.click()
+        document.body.removeChild(link)
+        
+        // Освобождаем память
+        URL.revokeObjectURL(url)
+      }
     } catch (error) {
       alert('Не удалось сохранить файл')
     }
@@ -548,6 +686,7 @@ export default function Home() {
                   setResult('')
                   setCurrentActionType(null)
                   setError(null)
+                  setImageResult(null)
                 }}
                 placeholder="Введите URL статьи, например: https://example.com/article"
                 className="flex-1 px-3 sm:px-4 py-2 sm:py-3 text-sm sm:text-base border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all disabled:bg-gray-100 disabled:cursor-not-allowed"
@@ -570,7 +709,7 @@ export default function Home() {
             </p>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 sm:gap-4">
             <button
               onClick={handleTranslate}
               disabled={loading}
@@ -670,6 +809,31 @@ export default function Home() {
                 'Пост для Telegram'
               )}
             </button>
+
+            <button
+              onClick={handleGenerateImage}
+              disabled={loading}
+              className={`px-4 sm:px-6 py-2.5 sm:py-3 rounded-lg font-medium transition-all text-sm sm:text-base ${
+                activeButton === 'Иллюстрация'
+                  ? 'bg-indigo-600 text-white shadow-lg scale-105'
+                  : loading
+                  ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                  : 'bg-indigo-500 text-white hover:bg-indigo-600 hover:shadow-md active:scale-95'
+              }`}
+              title="Сгенерировать иллюстрацию на основе статьи"
+            >
+              {loading && activeButton === 'Иллюстрация' ? (
+                <span className="flex items-center justify-center">
+                  <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                  </svg>
+                  Генерация...
+                </span>
+              ) : (
+                'Иллюстрация'
+              )}
+            </button>
           </div>
         </div>
 
@@ -701,6 +865,8 @@ export default function Home() {
                   ? 'Формирую тезисы...'
                   : activeButton === 'Пост для Telegram'
                   ? 'Создаю пост для Telegram...'
+                  : activeButton === 'Иллюстрация'
+                  ? 'Генерирую иллюстрацию...'
                   : 'Обрабатываю...'}
               </p>
             </div>
@@ -712,7 +878,7 @@ export default function Home() {
             <h2 className="text-xl sm:text-2xl font-semibold text-gray-900">
               Результат
             </h2>
-            {result && !loading && (
+            {(result || imageResult) && !loading && (
               <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-3">
                 <div className="relative" ref={shareMenuRef}>
                   <button
@@ -780,17 +946,19 @@ export default function Home() {
                   </svg>
                   Сохранить
                 </button>
-                <button
-                  id="copy-button"
-                  onClick={handleCopyResult}
-                  className="px-3 sm:px-4 py-2 bg-indigo-500 text-white rounded-lg hover:bg-indigo-600 transition-colors text-sm font-medium flex items-center justify-center gap-2"
-                  title="Копировать результат"
-                >
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                  </svg>
-                  Копировать
-                </button>
+                {!imageResult && (
+                  <button
+                    id="copy-button"
+                    onClick={handleCopyResult}
+                    className="px-3 sm:px-4 py-2 bg-indigo-500 text-white rounded-lg hover:bg-indigo-600 transition-colors text-sm font-medium flex items-center justify-center gap-2"
+                    title="Копировать результат"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                    </svg>
+                    Копировать
+                  </button>
+                )}
               </div>
             )}
           </div>
@@ -802,13 +970,27 @@ export default function Home() {
                   <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                 </svg>
                 <p className="text-gray-600 text-base sm:text-lg text-center">
-                  {activeButton === 'Парсинг...' ? 'Парсинг статьи...' : activeButton === 'Перевести' ? 'Перевод статьи...' : 'Генерация ответа...'}
+                  {activeButton === 'Парсинг...' ? 'Парсинг статьи...' : activeButton === 'Перевести' ? 'Перевод статьи...' : activeButton === 'Иллюстрация' ? 'Генерация иллюстрации...' : 'Генерация ответа...'}
                 </p>
-                {activeButton && activeButton !== 'Парсинг...' && activeButton !== 'Перевести' && (
+                {activeButton && activeButton !== 'Парсинг...' && activeButton !== 'Перевести' && activeButton !== 'Иллюстрация' && (
                   <p className="text-gray-500 text-sm mt-2 text-center">
                     {activeButton}
                   </p>
                 )}
+              </div>
+            ) : imageResult ? (
+              <div className="flex flex-col gap-4">
+                <div className="flex justify-center">
+                  <img 
+                    src={imageResult.image} 
+                    alt="Сгенерированная иллюстрация" 
+                    className="max-w-full h-auto rounded-lg shadow-md"
+                  />
+                </div>
+                <div className="bg-white rounded-lg p-3 border border-gray-200">
+                  <p className="text-xs text-gray-500 mb-1 font-medium">Промпт для генерации:</p>
+                  <p className="text-sm text-gray-700 whitespace-pre-wrap break-words">{imageResult.prompt}</p>
+                </div>
               </div>
             ) : result ? (
               <div className="text-gray-700 whitespace-pre-wrap text-xs sm:text-sm overflow-auto break-words">

@@ -128,6 +128,22 @@ export function handleAIProcessError(response: Response, errorData?: any): AppEr
     }
   }
 
+  if (response.status === 410 || response.status === 404) {
+    return {
+      type: 'ai_process_error',
+      message: 'Сервис генерации изображений временно недоступен. Попробуйте позже.',
+      originalError: errorData?.error || errorData?.details
+    }
+  }
+
+  if (response.status === 503) {
+    return {
+      type: 'ai_process_error',
+      message: errorData?.error || 'Сервис генерации изображений временно недоступен. Попробуйте позже.',
+      originalError: errorData?.details || errorData?.error
+    }
+  }
+
   if (errorData?.error?.includes('context length') || errorData?.error?.includes('токен')) {
     return {
       type: 'ai_process_error',
@@ -136,10 +152,13 @@ export function handleAIProcessError(response: Response, errorData?: any): AppEr
     }
   }
 
+  // Используем сообщение из API, если оно есть
+  const errorMessage = errorData?.error || errorData?.details || 'Ошибка при обработке статьи. Попробуйте снова.'
+  
   return {
     type: 'ai_process_error',
-    message: 'Ошибка при обработке статьи. Попробуйте снова.',
-    originalError: errorData?.error || errorData?.details
+    message: errorMessage,
+    originalError: errorData?.details || errorData?.error
   }
 }
 
@@ -205,4 +224,7 @@ export function handleError(error: unknown, errorType: ErrorType = 'unknown_erro
     originalError: String(error)
   }
 }
+
+
+
 
